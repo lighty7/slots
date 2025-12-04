@@ -1,10 +1,16 @@
+
 // A simple synthesizer to avoid external asset dependencies for the demo.
 class SoundSynthesizer {
     private ctx: AudioContext | null = null;
     private masterGain: GainNode | null = null;
+    private volume: number = 0.3; // Default volume
   
     constructor() {
-      // Initialize on first user interaction typically, but we'll try lazy loading
+      // Load saved volume
+      const savedVol = localStorage.getItem('neonSlots_volume');
+      if (savedVol !== null) {
+        this.volume = parseFloat(savedVol);
+      }
     }
   
     private init() {
@@ -12,11 +18,28 @@ class SoundSynthesizer {
         this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         this.masterGain = this.ctx.createGain();
         this.masterGain.connect(this.ctx.destination);
-        this.masterGain.gain.value = 0.3; // Default volume
+        this.masterGain.gain.value = this.volume;
       }
       if (this.ctx.state === 'suspended') {
         this.ctx.resume();
       }
+    }
+
+    public setVolume(val: number) {
+        this.volume = Math.max(0, Math.min(1, val));
+        if (this.masterGain && this.ctx) {
+            // Smooth transition
+            this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+            this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+        }
+        localStorage.setItem('neonSlots_volume', this.volume.toString());
+        
+        // If setting volume, ensure context is running so they can hear it
+        if (val > 0) this.init();
+    }
+
+    public getVolume(): number {
+        return this.volume;
     }
   
     public playTone(freq: number, type: OscillatorType, duration: number, startTime: number = 0) {
@@ -65,6 +88,10 @@ class SoundSynthesizer {
            this.playTone(523.25 + (i * 50), 'sawtooth', 0.3, now + t);
         });
       }
+    }
+
+    public playTestSound() {
+        this.playTone(440, 'sine', 0.1);
     }
   }
   

@@ -1,14 +1,18 @@
+
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { MachineConfig, WalletState } from './types';
 import { MACHINES, INITIAL_WALLET } from './constants';
 import MachineCard from './components/MachineCard';
 import SlotGame from './components/SlotGame';
 import Wallet from './components/Wallet';
+import SettingsModal from './components/SettingsModal';
 import { Ghost, Settings } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentMachine, setCurrentMachine] = useState<MachineConfig | null>(null);
   const [wallet, setWallet] = useState<WalletState>(INITIAL_WALLET);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Simple persistence
   useEffect(() => {
@@ -30,6 +34,13 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleReset = () => {
+      setWallet(INITIAL_WALLET);
+      localStorage.removeItem('neonSlots_wallet');
+      setShowSettings(false);
+      if (currentMachine) setCurrentMachine(null); // Return to lobby
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black text-white selection:bg-cyan-500/30">
       
@@ -40,8 +51,8 @@ const App: React.FC = () => {
       </div>
 
       {/* Navbar */}
-      <nav className="relative z-50 px-6 py-4 flex justify-between items-center border-b border-white/5 bg-slate-900/50 backdrop-blur-md sticky top-0">
-        <div className="flex items-center gap-3">
+      <nav className="relative z-40 px-6 py-4 flex justify-between items-center border-b border-white/5 bg-slate-900/50 backdrop-blur-md sticky top-0">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentMachine(null)}>
             <div className="w-10 h-10 bg-gradient-to-tr from-cyan-400 to-purple-500 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/20">
                 <Ghost size={24} className="text-white" />
             </div>
@@ -52,7 +63,10 @@ const App: React.FC = () => {
         
         <div className="flex items-center gap-4">
             <Wallet wallet={wallet} onTopUp={handleTopUp} />
-            <button className="p-2 text-slate-400 hover:text-white transition-colors">
+            <button 
+                onClick={() => setShowSettings(true)}
+                className="p-2 text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full"
+            >
                 <Settings size={20} />
             </button>
         </div>
@@ -92,6 +106,16 @@ const App: React.FC = () => {
         )}
 
       </main>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+            <SettingsModal 
+                onClose={() => setShowSettings(false)}
+                onReset={handleReset}
+            />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

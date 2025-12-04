@@ -6,7 +6,7 @@ export interface SymbolDef {
   name: string;
   icon: string; // Emoji or Lucide icon name mapping
   color: string;
-  value: number; // Base payout multiplier
+  value: number; // Base payout multiplier (fallback)
 }
 
 export interface MachineConfig {
@@ -18,6 +18,11 @@ export interface MachineConfig {
   rows: number;
   symbols: SymbolDef[];
   paylines: number[][][]; // Array of coordinate sets [[0,0], [0,1], ...]
+  
+  // Advanced Config (Optional)
+  reelStrips?: SymbolId[][]; // Explicit symbol order for each reel
+  payouts?: Record<SymbolId, Record<number, number>>; // Explicit payout table: SymbolId -> Count -> Multiplier/Coins
+  
   costPerSpin: number;
   rtp: number; // 0-1
   volatility: 'low' | 'medium' | 'high';

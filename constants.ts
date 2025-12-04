@@ -1,3 +1,4 @@
+
 import { MachineConfig, SymbolDef } from './types';
 
 // --- Symbols ---
@@ -27,23 +28,37 @@ const SYMBOLS: Record<string, SymbolDef> = {
 export const MACHINES: MachineConfig[] = [
   {
     id: 'classic-reel',
-    name: 'Classic 777',
+    name: 'Classic Reel',
     description: 'Old school mechanical feel. Low volatility, frequent small wins.',
     theme: 'classic',
     reels: 3,
     rows: 3,
-    costPerSpin: 10,
-    minBet: 10,
+    costPerSpin: 1,
+    minBet: 1,
     maxBet: 100,
-    rtp: 0.95,
-    volatility: 'low',
-    symbols: [SYMBOLS.CHERRY, SYMBOLS.LEMON, SYMBOLS.BAR, SYMBOLS.SEVEN, SYMBOLS.BELL],
+    rtp: 0.94,
+    volatility: 'medium',
+    symbols: [SYMBOLS.SEVEN, SYMBOLS.BAR, SYMBOLS.CHERRY, SYMBOLS.LEMON],
+    // Explicit Reel Strips (Mapped "7" -> SEVEN, etc.)
+    reelStrips: [
+      ['SEVEN','BAR','CHERRY','LEMON','CHERRY','BAR','SEVEN'],
+      ['LEMON','CHERRY','BAR','SEVEN','CHERRY','LEMON','BAR'],
+      ['CHERRY','LEMON','BAR','SEVEN','BAR','CHERRY','LEMON']
+    ],
+    // Explicit Payouts (Coins per bet unit)
+    payouts: {
+        'SEVEN': { 3: 500, 2: 50 },
+        'BAR': { 3: 100, 2: 10 },
+        'CHERRY': { 3: 40, 2: 5 },
+        'LEMON': { 3: 20 }
+    },
+    // Converted paylines from [row, row, row] to [[col, row], ...]
     paylines: [
-      [[0, 1], [1, 1], [2, 1]], // Middle Horizontal
-      [[0, 0], [1, 0], [2, 0]], // Top Horizontal
-      [[0, 2], [1, 2], [2, 2]], // Bottom Horizontal
-      [[0, 0], [1, 1], [2, 2]], // Diagonal
-      [[0, 2], [1, 1], [2, 0]], // Diagonal
+      [[0, 0], [1, 0], [2, 0]], // Top (0,0,0)
+      [[0, 1], [1, 1], [2, 1]], // Middle (1,1,1)
+      [[0, 2], [1, 2], [2, 2]], // Bottom (2,2,2)
+      [[0, 0], [1, 1], [2, 2]], // Diagonal Top-Bot (0,1,2)
+      [[0, 2], [1, 1], [2, 0]], // Diagonal Bot-Top (2,1,0)
     ]
   },
   {
