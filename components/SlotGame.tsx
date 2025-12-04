@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, RefreshCw, Maximize2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Maximize2, RotateCcw, Square, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MachineConfig, SpinResult, WalletState } from '../types';
 import { GameEngine } from '../services/GameEngine';
@@ -15,13 +15,16 @@ interface Props {
   onBack: () => void;
 }
 
+type GameStatus = 'IDLE' | 'SPINNING' | 'STOPPING' | 'RESULT';
+
 const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) => {
-  const [spinning, setSpinning] = useState(false);
+  const [status, setStatus] = useState<GameStatus>('IDLE');
   const [reelsStopped, setReelsStopped] = useState(0);
   const [result, setResult] = useState<SpinResult | null>(null);
   const [bet, setBet] = useState(machine.minBet);
   const [winDisplay, setWinDisplay] = useState(0);
   const [autoPlay, setAutoPlay] = useState(false);
+  const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Dimensions for overlay
   const gridRef = useRef<HTMLDivElement>(null);
@@ -46,9 +49,20 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
         window.removeEventListener('resize', updateDim);
         clearTimeout(t);
     };
-  }, [machine]); // Re-measure if machine changes (though usually same size)
+  }, [machine]);
 
-  // Handle Spin Logic
+  // Cleanup timer on unmount
+  useEffect(() => {
+      return () => {
+          if (autoStopTimer.current) clearTimeout(autoStopTimer.current);
+      };
+  }, []);
+
+  const triggerStop = useCallback(() => {
+    if (autoStopTimer.current) clearTimeout(autoStopTimer.current);
+    setStatus('STOPPING');
+  }, []);
+
   const handleSpin = useCallback(async () => {
     if (wallet.softCoin < bet) {
         alert("Not enough coins!");
@@ -56,12 +70,13 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
         return;
     }
 
-    setSpinning(true);
+    // Reset state
+    setStatus('SPINNING');
     setReelsStopped(0);
     setResult(null);
     setWinDisplay(0);
     
-    // Deduct bet immediately for responsive UI
+    // Deduct bet immediately
     updateWallet({ ...wallet, softCoin: wallet.softCoin - bet });
     
     soundManager.playSpinSound();
@@ -69,27 +84,34 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
     try {
         const spinResult = await GameEngine.spin(machine, bet);
         setResult(spinResult);
+
+        // Auto stop after 2s if user doesn't click stop manually
+        // We only set this timer once the result is ready to ensure fairness/logic availability
+        autoStopTimer.current = setTimeout(() => {
+            triggerStop();
+        }, 2000);
+
     } catch (e) {
         console.error("Spin failed", e);
-        setSpinning(false);
+        setStatus('IDLE');
     }
-  }, [bet, machine, updateWallet, wallet]);
+  }, [bet, machine, updateWallet, wallet, triggerStop]);
 
-  // Handle AutoPlay
+  // AutoPlay Logic
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
-    if (autoPlay && !spinning && reelsStopped === machine.reels) {
+    if (autoPlay && status === 'IDLE') {
         timeout = setTimeout(() => {
             handleSpin();
-        }, 2000); // Increased delay slightly to allow animations to play
+        }, 1500);
     }
     return () => clearTimeout(timeout);
-  }, [autoPlay, spinning, reelsStopped, machine.reels, handleSpin]);
+  }, [autoPlay, status, handleSpin]);
 
-  // Handle Win Effect
+  // Handle Reel Completion
   useEffect(() => {
-    if (reelsStopped === machine.reels && result) {
-        setSpinning(false);
+    if (status === 'STOPPING' && reelsStopped === machine.reels && result) {
+        setStatus('RESULT');
         
         if (result.totalWin > 0) {
             setWinDisplay(result.totalWin);
@@ -107,9 +129,18 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                 });
             }
         }
+
+        // Transition back to IDLE after a moment so user can see the result
+        // or let them click spin immediately.
+        // We'll leave it in RESULT state until they spin again, or if autoplay is on, the effect above handles it.
+        const resetDelay = setTimeout(() => {
+            setStatus('IDLE');
+        }, result.totalWin > 0 ? 2000 : 500);
+        
+        return () => clearTimeout(resetDelay);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reelsStopped, result, machine.reels]);
+  }, [reelsStopped, result, machine.reels, status]);
 
   const handleReelStop = () => {
     setReelsStopped(prev => prev + 1);
@@ -121,7 +152,8 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
   const cellW = gridDim.w / machine.reels;
   const cellH = MACHINE_ROW_HEIGHT;
 
-  const showWinOverlay = !spinning && reelsStopped === machine.reels && result && result.totalWin > 0;
+  // Show overlay only when fully stopped and we have a win
+  const showWinOverlay = (status === 'RESULT' || status === 'IDLE') && result && result.totalWin > 0;
 
   return (
     <div className="flex flex-col h-full w-full max-w-4xl mx-auto p-4 animate-fade-in">
@@ -136,12 +168,37 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
             <h2 className="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
                 {machine.name}
             </h2>
-            <div className="w-24"></div> {/* Spacer */}
+            <div className="w-24"></div> 
         </div>
 
         {/* Machine Display */}
         <div className="relative glass-panel rounded-3xl p-1 md:p-4 mb-6 shadow-2xl border-t border-white/20">
             
+            {/* Messages Overlay */}
+            <AnimatePresence>
+                {status === 'SPINNING' && (
+                    <motion.div 
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="absolute -top-12 left-0 right-0 text-center"
+                    >
+                        <span className="text-cyan-400 font-bold tracking-widest text-sm uppercase animate-pulse">Good Luck...</span>
+                    </motion.div>
+                )}
+                {showWinOverlay && (
+                     <motion.div 
+                        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                        className="absolute -top-16 left-0 right-0 flex justify-center"
+                    >
+                        <div className="bg-yellow-500/20 backdrop-blur border border-yellow-500/50 px-6 py-2 rounded-full flex items-center gap-3 shadow-[0_0_30px_rgba(234,179,8,0.3)]">
+                            <Trophy className="text-yellow-400" size={24} />
+                            <span className="text-2xl font-black text-white drop-shadow-md">
+                                WIN {winDisplay}
+                            </span>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Jackpot Overlay */}
             {result?.isJackpot && showWinOverlay && (
                  <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
@@ -172,7 +229,7 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                         symbols={machine.symbols}
                         finalSymbolId={null}
                         gridColumn={result ? result.grid[i] : []}
-                        spinning={spinning}
+                        spinning={status === 'SPINNING'} // Only spin when status is specifically SPINNING
                         delay={i * 0.2}
                         onStop={handleReelStop}
                         machineRowHeight={MACHINE_ROW_HEIGHT}
@@ -265,7 +322,7 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                     <button 
                         onClick={() => setBet(Math.max(machine.minBet, bet - machine.minBet))}
                         className="p-2 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
-                        disabled={spinning}
+                        disabled={status === 'SPINNING' || status === 'STOPPING'}
                     >
                         -
                     </button>
@@ -275,7 +332,7 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                     <button 
                          onClick={() => setBet(Math.min(machine.maxBet, bet + machine.minBet))}
                          className="p-2 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
-                         disabled={spinning}
+                         disabled={status === 'SPINNING' || status === 'STOPPING'}
                     >
                         +
                     </button>
@@ -283,28 +340,47 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                 <button 
                     onClick={() => setBet(machine.maxBet)}
                     className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 self-start"
-                    disabled={spinning}
+                    disabled={status === 'SPINNING' || status === 'STOPPING'}
                 >
                     <Maximize2 size={12} /> MAX BET
                 </button>
             </div>
 
-            {/* Spin Button */}
+            {/* Main Action Button */}
             <div className="flex justify-center">
                 <button
-                    onClick={() => !spinning && handleSpin()}
-                    disabled={spinning}
+                    onClick={() => {
+                        if (status === 'SPINNING') {
+                            triggerStop();
+                        } else if (status === 'IDLE' || status === 'RESULT') {
+                            handleSpin();
+                        }
+                    }}
+                    disabled={status === 'STOPPING'}
                     className={`
                         w-24 h-24 rounded-full border-4 border-white/10 shadow-[0_0_30px_rgba(6,182,212,0.3)]
                         flex items-center justify-center relative overflow-hidden group transition-all duration-200
-                        ${spinning ? 'scale-95 opacity-80 cursor-not-allowed bg-slate-800' : 'hover:scale-105 active:scale-95 bg-gradient-to-br from-cyan-500 to-blue-600'}
+                        ${status === 'STOPPING' 
+                            ? 'scale-95 opacity-80 cursor-not-allowed bg-slate-800' 
+                            : status === 'SPINNING' 
+                                ? 'bg-rose-500 hover:bg-rose-600 border-rose-400/30 shadow-[0_0_30px_rgba(244,63,94,0.3)]'
+                                : 'hover:scale-105 active:scale-95 bg-gradient-to-br from-cyan-500 to-blue-600'
+                        }
                     `}
                 >
                     <div className="absolute inset-0 bg-white/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <RefreshCw 
-                        size={40} 
-                        className={`text-white drop-shadow-md ${spinning ? 'animate-spin' : ''}`} 
-                    />
+                    
+                    {status === 'SPINNING' ? (
+                        <div className="flex flex-col items-center animate-pulse">
+                            <Square size={32} fill="currentColor" className="text-white mb-1" />
+                            <span className="text-[10px] font-bold text-white uppercase tracking-widest">STOP</span>
+                        </div>
+                    ) : (
+                        <RefreshCw 
+                            size={40} 
+                            className={`text-white drop-shadow-md ${status === 'STOPPING' ? 'animate-spin' : ''}`} 
+                        />
+                    )}
                 </button>
             </div>
 
@@ -313,6 +389,7 @@ const SlotGame: React.FC<Props> = ({ machine, wallet, updateWallet, onBack }) =>
                  <div className="flex gap-4">
                      <button 
                         onClick={() => setAutoPlay(!autoPlay)}
+                        disabled={status === 'SPINNING' || status === 'STOPPING'}
                         className={`
                             flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm border transition-all
                             ${autoPlay 
